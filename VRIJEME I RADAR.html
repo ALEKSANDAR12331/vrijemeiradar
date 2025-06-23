@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vrijeme i Radar - Kompletna verzija</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f0f4f8;
+      color: #222;
+    }
+    header {
+      background: #003366;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    #main {
+      display: flex;
+      flex-direction: row;
+    }
+    #sidebar {
+      width: 300px;
+      padding: 1rem;
+      background: #e0eaf1;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+      height: calc(100vh - 80px);
+      overflow-y: auto;
+    }
+    #content {
+      flex-grow: 1;
+      padding: 1rem;
+    }
+    #map {
+      height: 400px;
+      width: 100%;
+      margin-bottom: 1rem;
+      border-radius: 10px;
+    }
+    input {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+    button {
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0.3rem 0.6rem;
+      margin-left: 10px;
+      border-radius: 4px;
+      border: none;
+      background-color: #0055cc;
+      color: white;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #003d99;
+    }
+    .alert {
+      background: #ffcccc;
+      border-left: 6px solid red;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .forecast {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .day {
+      background: #ffffff;
+      border-radius: 8px;
+      padding: 10px;
+      width: 140px;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      font-size: 0.9rem;
+    }
+    .info {
+      margin-top: 2rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .layer-controls {
+      margin-bottom: 1rem;
+    }
+    .dark-mode {
+      background-color: #222;
+      color: white;
+    }
+    .dark-mode #sidebar {
+      background-color: #333;
+    }
+    .dark-mode .day {
+      background-color: #444;
+    }
+    .legend {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+    .legend span {
+      display: inline-block;
+      padding: 2px 6px;
+      margin-right: 4px;
+      border-radius: 3px;
+      background: #ccc;
+      color: black;
+    }
+    .legend .precip { background: #0055ff; color: white; }
+    .legend .clouds { background: #999999; }
+    .legend .temp { background: #ff9900; color: white; }
+    .legend .wind { background: #00ccff; color: white; }
+    #city-temp {
+      font-weight: bold;
+      margin-top: 10px;
+      font-size: 1.1em;
+    }
+    footer {
+      background: #003366;
+      color: white;
+      text-align: center;
+      padding: 10px 0;
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vrijeme i Radar</h1>
+    <button onclick="toggleDarkMode()">🌓 Tamni Mod</button>
+  </header>
+  <div id="main">
+    <div id="sidebar">
+      <input type="text" id="city-search" placeholder="Unesi grad (npr. Sarajevo)" />
+      <button onclick="searchCity()">Pretraži</button>
+      <div id="city-temp"></div>
+      <div class="layer-controls">
+        <label><input type="radio" name="layer" value="precipitation_new" checked> Padavine</label><br>
+        <label><input type="radio" name="layer" value="clouds_new"> Oblaci</label><br>
+        <label><input type="radio" name="layer" value="temp_new"> Temperatura</label><br>
+        <label><input type="radio" name="layer" value="wind_new"> Vjetar</label>
+        <div class="legend">
+          <strong>Legenda slojeva:</strong><br>
+          <span class="precip">Padavine (plavo - jaka kiša)</span><br>
+          <span class="clouds">Oblaci (sivo - gustoća)</span><br>
+          <span class="temp">Temperatura (narančasto - toplije)</span><br>
+          <span class="wind">Vjetar (cijan - jači vjetar)</span>
+        </div>
+      </div>
+      <div id="current-weather"></div>
+      <div id="weather-alert"></div>
+      <div class="info">
+        <h3>O nama</h3>
+        <p>Mi smo tim koji nudi tačne i ažurirane vremenske informacije i radarsku sliku padavina širom BiH i svijeta. Naš cilj je da vas pravovremeno obavijestimo o svim vremenskim uslovima.</p>
+        <h3>Kontakt</h3>
+        <p>Email: info@vrijemeiradar.ba</p>
+      </div>
+    </div>
+    <div id="content">
+      <div id="map"></div>
+      <h2>Prognoza za narednih 10 dana</h2>
+      <div class="forecast" id="forecast"></div>
+    </div>
+  </div>
+  <footer>
+    &copy; 2025 Vrijeme i Radar - Sva prava zadržana
+  </footer>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const apiKey = '9fd5b7b5c27ac77f57fb03a9dc0e0522'; // Stavi svoj OpenWeatherMap API ključ ovdje
+
+    let map = L.map('map').setView([43.85, 18.38], 7);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+    }).addTo(map);
+
+    let overlayLayer = L.tileLayer(`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${apiKey}`, { opacity: 0.6 }).addTo(map);
+
+    document.querySelectorAll('input[name="layer"]').forEach(input => {
+      input.addEventListener('change', function () {
+        map.removeLayer(overlayLayer);
+        const selectedLayer = this.value;
+        overlayLayer = L.tileLayer(`https://tile.openweathermap.org/map/${selectedLayer}/{z}/{x}/{y}.png?appid=${apiKey}`, { opacity: 0.6 });
+        map.addLayer(overlayLayer);
+      });
+    });
+
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark-mode');
+    }
+
+    function fetchWeather(lat, lon, cityName = '') {
+      fetch(`https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&units=metric&lang=bs&appid=${apiKey}`)
+        .then(res => res.json())
+        .then(data => {
+          showCurrentWeather(data.current);
+          showForecast(data.daily);
+          showAlert(data);
+          if (cityName) {
+            document.getElementById('city-temp').textContent = `Temperatura u gradu ${cityName}: ${Math.round(data.current.temp)}°C`;
+          } else {
+            document.getElementById('city-temp').textContent = '';
+          }
+        })
+        .catch(() => {
+          alert('Greška pri dohvaćanju vremenskih podataka.');
+        });
+    }
+
+    function showCurrentWeather(current) {
+      const weatherBox = document.getElementById('current-weather');
+      weatherBox.innerHTML = `
+        <h3>Trenutno vrijeme</h3>
+        <p><strong>${current.temp}°C</strong></p>
+        <p>${current.weather[0].description}</p>
+        <p>💨 Vjetar: ${current.wind_speed} m/s, smjer: ${windDirection(current.wind_deg)}</p>
+      `;
+    }
+
+    function windDirection(deg) {
+      const directions = ['Sjever', 'Sjeveroistok', 'Istok', 'Jugoistok', 'Jug', 'Jugozapad', 'Zapad', 'Sjeverozapad'];
+      const index = Math.round(deg / 45) % 8;
+      return directions[index];
+    }
+
+    function showForecast(daily) {
+      const forecastBox = document.getElementById('forecast');
+      forecastBox.innerHTML = '';
+
+      const daysToShow = Math.min(daily.length, 10);
+      for (let i = 0; i < daysToShow; i++) {
+        const day = daily[i];
+        const date = new Date(day.dt * 1000);
+        const options = { weekday: 'short', day: 'numeric', month: 'short' };
+        const dateStr = date.toLocaleDateString('bs-BA', options);
+        const min = Math.round(day.temp.min);
+        const max = Math.round(day.temp.max);
+        const windSpeed = day.wind_speed.toFixed(1);
+        const windDeg = day.wind_deg;
+        const desc = day.weather[0].description;
+
+        const div = document.createElement('div');
+        div.className = 'day';
+        div.innerHTML = `
+          <h4>${dateStr}</h4>
+          <p>${desc}</p>
+          <p><strong>${min}° / ${max}°C</strong></p>
+          <p>💨 Vjetar: ${windSpeed} m/s, smjer: ${windDirection(windDeg)}</p>
+        `;
+        forecastBox.appendChild(div);
+      }
+    }
+
+    function showAlert(data) {
+      const alertBox = document.getElementById('weather-alert');
+      alertBox.innerHTML = '';
+      const hasRain = data.current.weather.some(w => w.main === 'Rain' || w.description.toLowerCase().includes('kiš'));
+      const hasStorm = data.current.weather.some(w => w.main === 'Thunderstorm');
+      if (hasRain || hasStorm) {
+        alertBox.innerHTML = `
+          <div class="alert">
+            ⚠️ Upozorenje: Moguće nevrijeme (${data.current.weather[0].description})
+          </div>
+        `;
+      }
+    }
+
+    function fetchCoordinates(city) {
+      fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${apiKey}`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.length) {
+            alert('Grad nije pronađen!');
+            return;
+          }
+          const { lat, lon, name } = data[0];
+          map.setView([lat, lon], 10);
+          fetchWeather(lat, lon, name);
+        })
+        .catch(() => alert('Greška pri pronalaženju grada.'));
+    }
+
+    function searchCity() {
+      const city = document.getElementById('city-search').value.trim();
+      if (!city) {
+        alert('Unesite ime grada.');
+        return;
+      }
+      fetchCoordinates(city);
+    }
+
+    // Inicijalni prikaz za Sarajevo
+    fetchCoordinates('Sarajevo');
+
+  </script>
+</body>
+</html>
